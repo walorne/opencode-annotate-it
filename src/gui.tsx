@@ -10,7 +10,9 @@
 
 import { createEffect, onCleanup } from "solid-js"
 import { Command, ComposerPill, createKeyed, Plugin, SettingsPage, Slot, Style } from "@opencode/plugin/gui"
+import { BrowserSelection } from "./gui/contract"
 import { definition } from "./gui/definition"
+import { normalizeQuote } from "./gui/dom"
 import { createManager } from "./gui/manager"
 import { AnnotateOverlay, AnnotateSettings, setManager } from "./gui/ui"
 import css from "./gui/styles.css?inline"
@@ -115,6 +117,22 @@ export default Plugin.define({
       render: () => <AnnotateOverlay />,
     })
 
+    // Browser panes live in separate web contents; the main process samples
+    // their selection and pushes it here.
+    const browserSelection = ctx.main(BrowserSelection)
+    browserSelection.on("selection", (data) => {
+      const text = normalizeQuote(data.text)
+      if (!text) return
+      manager.setExternalTarget({
+        text,
+        rect: data.rect,
+        line: data.rect,
+        range: null,
+        source: { kind: "browser", url: data.url, title: data.title },
+      })
+    })
+    browserSelection.on("clear", () => manager.clearExternalTarget())
+
     // A sent user message carrying a note's quote marks that note sent. The
     // prompt is committed by the time a turn starts or a queued message lands;
     // the delayed rescans catch the message list finishing its sync.
@@ -145,5 +163,80 @@ export default Plugin.define({
     )
 
     return stop
+  },
+  main(ctx) {
+    const provider = ctx.provide(BrowserSelection, {})
+    const last = new Map<number, string>()
+
+    const sample = `(() => {
+      const s = window.getSelection();
+      if (!s || s.isCollapsed || s.rangeCount === 0) return null;
+      const text = s.toString().trim();
+      if (!text) return null;
+      const r = s.getRangeAt(0).getBoundingClientRect();
+      return {
+        text: text.slice(0, 20000),
+        url: location.href,
+        title: document.title || "",
+        rect: { top: r.top, left: r.left, right: r.right, bottom: r.bottom }
+      };
+    })()`
+
+    type Sample = {
+      text: string
+      url: string
+      title: string
+      rect: { top: number; left: number; right: number; bottom: number }
+    }
+
+    const timer = setInterval(async () => {
+      for (const win of ctx.windows.list()) {
+        const children = (win.contentView as unknown as { children?: unknown[] }).children ?? []
+        for (const child of children) {
+          const view = child as {
+            webContents?: {
+              id: number
+              isDestroyed(): boolean
+              getURL(): string
+              getZoomFactor(): number
+              executeJavaScript(code: string, userGesture?: boolean): Promise<unknown>
+            }
+            getBounds?: () => { x: number; y: number; width: number; height: number }
+          }
+          const wc = view.webContents
+          if (!wc || wc.isDestroyed() || !view.getBounds) continue
+          const url = wc.getURL()
+          if (!/^(https?|file):/.test(url)) continue
+          let result: Sample | null = null
+          try {
+            result = (await wc.executeJavaScript(sample, true)) as Sample | null
+          } catch {
+            continue
+          }
+          const key = result ? `${result.text}\u0000${result.url}` : ""
+          if (last.get(wc.id) === key) continue
+          last.set(wc.id, key)
+          if (!result) {
+            provider.emit("clear", {})
+            continue
+          }
+          const bounds = view.getBounds()
+          const zoom = wc.getZoomFactor() || 1
+          provider.emit("selection", {
+            text: result.text,
+            url: result.url,
+            title: result.title,
+            rect: {
+              top: bounds.y + result.rect.top * zoom,
+              left: bounds.x + result.rect.left * zoom,
+              right: bounds.x + result.rect.right * zoom,
+              bottom: bounds.y + result.rect.bottom * zoom,
+            },
+          })
+        }
+      }
+    }, 400)
+
+    ctx.onCleanup(() => clearInterval(timer))
   },
 })

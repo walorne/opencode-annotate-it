@@ -16,7 +16,8 @@
 
 /* The app's own single-quote toolbar steps aside: the pencil button is the
    entry point in standby, the review panel replaces it in review mode. */
-[data-component="timeline-quote"] {
+[data-component="timeline-quote"],
+[data-component="terminal-quote"] {
   display: none !important;
 }
 

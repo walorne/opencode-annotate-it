@@ -32,6 +32,8 @@ export type DocAnchor = typeof DocAnchor.Type
 export const NoteSource = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("chat") }),
   Schema.Struct({ kind: Schema.Literal("document"), path: Schema.String }),
+  Schema.Struct({ kind: Schema.Literal("terminal") }),
+  Schema.Struct({ kind: Schema.Literal("browser"), url: Schema.String, title: Schema.optional(Schema.String) }),
 ])
 export type NoteSource = typeof NoteSource.Type
 
@@ -48,6 +50,8 @@ export const Note = Schema.Struct({
   source: NoteSource,
   chat: Schema.optional(Schema.Array(ChatPiece)),
   doc: Schema.optional(DocAnchor),
+  /** Text-search anchor for chat selections inside shadow roots (diffs, code). */
+  textAnchor: Schema.optional(DocAnchor),
   comments: Schema.Array(NoteComment),
   created: Schema.Number,
 })
@@ -98,8 +102,12 @@ export const definition = Plugin.define({
       "pill.count": "{count} notes",
       "source.chat": "Chat",
       "source.document": "Document: {path}",
+      "source.terminal": "Terminal",
+      "source.browser": "Browser: {host}",
       "subject.chat": "the session timeline",
       "subject.document": "the file {path}",
+      "subject.terminal": "the terminal",
+      "subject.browser": "the page {url}",
       "bar.custom": "Custom reply",
       "bar.quote": "Quote",
       "bar.addAction": "Add action",
@@ -171,8 +179,12 @@ export const definition = Plugin.define({
       "pill.count": "заметок: {count}",
       "source.chat": "Чат",
       "source.document": "Документ: {path}",
+      "source.terminal": "Терминал",
+      "source.browser": "Браузер: {host}",
       "subject.chat": "the session timeline",
       "subject.document": "the file {path}",
+      "subject.terminal": "the terminal",
+      "subject.browser": "the page {url}",
       "bar.custom": "Свой ответ",
       "bar.quote": "Цитата",
       "bar.addAction": "Добавить действие",
@@ -244,8 +256,12 @@ export const definition = Plugin.define({
       "pill.count": "{count} 条批注",
       "source.chat": "聊天",
       "source.document": "文档：{path}",
+      "source.terminal": "终端",
+      "source.browser": "浏览器：{host}",
       "subject.chat": "the session timeline",
       "subject.document": "the file {path}",
+      "subject.terminal": "the terminal",
+      "subject.browser": "the page {url}",
       "bar.custom": "自定义回复",
       "bar.quote": "引用",
       "bar.addAction": "添加动作",

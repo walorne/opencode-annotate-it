@@ -9,10 +9,12 @@ import type { definition, Note, NoteSource, QuickAction } from "./definition"
 import {
   captureChatPieces,
   captureDocAnchor,
+  captureTextAnchor,
   normalizeQuote,
   readSelection,
   resolveChatPiece,
   resolveDocAnchor,
+  resolveTextAnchor,
   TIMELINE_ROOT_SELECTOR,
   TIMELINE_SELECTOR,
   UI_SELECTOR,
@@ -175,11 +177,41 @@ export function createManager(ctx: Ctx) {
 
   const composer = () => ctx.screen.current()?.composer
 
-  const sourceLabel = (source: NoteSource) =>
-    source.kind === "document" ? ctx.t("source.document", { path: source.path }) : ctx.t("source.chat")
+  const sourceLabel = (source: NoteSource) => {
+    switch (source.kind) {
+      case "document":
+        return ctx.t("source.document", { path: source.path })
+      case "terminal":
+        return ctx.t("source.terminal")
+      case "browser": {
+        let host = source.url
+        try {
+          host = new URL(source.url).host
+        } catch {
+          /* keep the raw url */
+        }
+        return ctx.t("source.browser", { host })
+      }
+      default:
+        return ctx.t("source.chat")
+    }
+  }
 
-  const sourceSubject = (source: NoteSource) =>
-    source.kind === "document" ? ctx.t("subject.document", { path: source.path }) : ctx.t("subject.chat")
+  const sourceSubject = (source: NoteSource) => {
+    switch (source.kind) {
+      case "document":
+        return ctx.t("subject.document", { path: source.path })
+      case "terminal":
+        return ctx.t("subject.terminal")
+      case "browser":
+        return ctx.t("subject.browser", { url: source.url })
+      default:
+        return ctx.t("subject.chat")
+    }
+  }
+
+  const sourceIcon = (source: NoteSource): "globe" | "terminal" | "outline-quote" =>
+    source.kind === "browser" ? "globe" : source.kind === "terminal" ? "terminal" : "outline-quote"
 
   /** Attach one quote+comment to the composer and record the annotation. */
   const attachNote = (quote: string, comment: string, source: NoteSource, range: Range | null, keepEditor: boolean) => {
@@ -191,12 +223,20 @@ export function createManager(ctx: Ctx) {
     const id = crypto.randomUUID()
     const chat = source.kind === "chat" && range ? captureChatPieces(range) : undefined
     const doc = source.kind === "document" && range ? captureDocAnchor(range, source.path) : undefined
+    // Shadow-root chat selections (diffs, code) have no part offsets; anchor by text search.
+    const textAnchor =
+      source.kind === "chat" && range && (!chat || chat.length === 0)
+        ? (() => {
+            const root = document.querySelector(TIMELINE_ROOT_SELECTOR)
+            return root ? captureTextAnchor(range, root) : null
+          })()
+        : undefined
     comp.attach({
       type: "quote",
       commentID: id,
       text: quote,
       ...(comment ? { comment } : {}),
-      source: { label: sourceLabel(source), icon: "outline-quote", subject: sourceSubject(source) },
+      source: { label: sourceLabel(source), icon: sourceIcon(source), subject: sourceSubject(source) },
     })
     updateNotes((list) => [
       ...list,
@@ -206,6 +246,7 @@ export function createManager(ctx: Ctx) {
         source,
         ...(chat && chat.length ? { chat } : {}),
         ...(doc ? { doc } : {}),
+        ...(textAnchor ? { textAnchor } : {}),
         comments: comment ? [{ text: comment, sent: false }] : [],
         created: Date.now(),
       },
@@ -345,12 +386,18 @@ export function createManager(ctx: Ctx) {
   }
 
   const resolveNoteRanges = (note: Note): Range[] => {
+    if (note.source.kind === "browser" || note.source.kind === "terminal") return []
     if (note.source.kind === "document") {
       const range = note.doc ? resolveDocAnchor(note.doc) : null
       return range ? [range] : []
     }
     const root = document.querySelector(TIMELINE_ROOT_SELECTOR)
-    if (!root || !note.chat) return []
+    if (!root) return []
+    if (note.textAnchor) {
+      const range = resolveTextAnchor(root, note.textAnchor)
+      return range ? [range] : []
+    }
+    if (!note.chat) return []
     const result: Range[] = []
     for (const piece of note.chat) {
       const range = resolveChatPiece(root, piece)
@@ -468,6 +515,33 @@ export function createManager(ctx: Ctx) {
 
   // ------------------------------------------------------------ selection watch
 
+  /** Targets coming from outside the document DOM (terminal copy, browser pane). */
+  const isExternal = (t: SelectionTarget | null) =>
+    !!t && (t.source.kind === "browser" || t.source.kind === "terminal")
+
+  const setExternalTarget = (t: SelectionTarget | null) => setTarget(t)
+  const clearExternalTarget = () => {
+    if (isExternal(target())) setTarget(null)
+  }
+
+  // The terminal is a canvas: its selection reaches the app through the copy
+  // event's clipboardData. Offer the copied passage for annotation at once.
+  const onCopy = (event: ClipboardEvent) => {
+    const element = event.target instanceof Element ? event.target : null
+    const wrapper = element?.closest('[id^="terminal-wrapper"]')
+    if (!wrapper) return
+    const text = normalizeQuote(event.clipboardData?.getData("text/plain") ?? "")
+    if (!text) return
+    const rect = wrapper.getBoundingClientRect()
+    setTarget({
+      text,
+      rect: { top: rect.top, left: rect.left, right: rect.right, bottom: rect.bottom },
+      line: { top: rect.top + 6, left: rect.left + 6, right: rect.left + 220, bottom: rect.top + 24 },
+      range: null,
+      source: { kind: "terminal" },
+    })
+  }
+
   // A plain click on a highlighted passage opens its card (no selection).
   const onClick = (event: MouseEvent) => {
     if (!reviewing() || event.defaultPrevented) return
@@ -491,7 +565,10 @@ export function createManager(ctx: Ctx) {
       setTarget(null)
       return
     }
-    setTarget(readSelection())
+    const dom = readSelection()
+    // An external target (browser/terminal) has no document selection to read.
+    if (!dom && isExternal(target())) return
+    setTarget(dom)
   }
 
   const onSelectionChange = () => {
@@ -504,6 +581,7 @@ export function createManager(ctx: Ctx) {
       const active = document.activeElement
       if (active instanceof Element && active.closest(UI_SELECTOR)) return
       if (Date.now() < uiInteractUntil) return
+      if (isExternal(target())) return
       // A collapsed selection with a drafted comment still saves the quote.
       if (target() && customDraft().trim()) {
         addCustom(customDraft())
@@ -533,6 +611,7 @@ export function createManager(ctx: Ctx) {
     // Click away saves a typed/dictated comment as a quote (DSH behavior);
     // an empty field just dismisses the panel.
     if (target() && customDraft().trim()) addCustom(customDraft())
+    if (isExternal(target())) setTarget(null)
     pressing = true
   }
 
@@ -567,6 +646,7 @@ export function createManager(ctx: Ctx) {
     window.addEventListener("blur", onBlur)
     document.addEventListener("mousemove", onMouseMove, { passive: true })
     document.addEventListener("click", onClick)
+    document.addEventListener("copy", onCopy)
 
     const observer = new MutationObserver(() => schedulePaint())
     let observedRoots: Element[] = []
@@ -611,6 +691,7 @@ export function createManager(ctx: Ctx) {
       window.removeEventListener("blur", onBlur)
       document.removeEventListener("mousemove", onMouseMove)
       document.removeEventListener("click", onClick)
+      document.removeEventListener("copy", onCopy)
       observer.disconnect()
       bodyObserver.disconnect()
       window.removeEventListener("resize", resize)
@@ -631,6 +712,8 @@ export function createManager(ctx: Ctx) {
   return {
     target,
     clearTarget: () => setTarget(null),
+    setExternalTarget,
+    clearExternalTarget,
     cancelTarget: () => {
       setTarget(null)
       setCustomDraft("")

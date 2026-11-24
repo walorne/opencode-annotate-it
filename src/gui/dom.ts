@@ -22,7 +22,7 @@ export type SelectionTarget = {
   rect: { top: number; left: number; right: number; bottom: number }
   /** First line box, for centering the quick bar. */
   line: { top: number; left: number; right: number; bottom: number }
-  range: Range
+  range: Range | null
   source: NoteSource
 }
 
@@ -93,6 +93,20 @@ export function documentPathOf(element: Element): string | null {
   }
 }
 
+/** The element to run `closest` checks on: shadow-root containers map to their host chain. */
+function surfaceElement(node: Node | null): Element | null {
+  let el = node && node.nodeType === 1 ? (node as Element) : node?.parentElement ?? null
+  while (el) {
+    const root = el.getRootNode()
+    if (root instanceof ShadowRoot) {
+      el = root.host instanceof Element ? root.host : null
+      continue
+    }
+    return el
+  }
+  return null
+}
+
 /** The live selection when it sits in annotatable content and out of every control. */
 export function readSelection(): SelectionTarget | null {
   let selection: Selection | null
@@ -102,19 +116,45 @@ export function readSelection(): SelectionTarget | null {
     return null
   }
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null
-  const range = selection.getRangeAt(0)
-  const node = range.commonAncestorContainer
-  const element = node.nodeType === 1 ? (node as Element) : node.parentElement
+
+  // Selections inside shadow roots (diff viewers, code editors) read empty
+  // through the plain range; composed ranges reach into the shadow tree.
+  let range = selection.getRangeAt(0)
+  let text = selection.toString()
+  if (!text.trim() && "getComposedRanges" in Selection.prototype) {
+    const shadows: ShadowRoot[] = []
+    for (const node of [selection.anchorNode, selection.focusNode]) {
+      const root = node?.getRootNode()
+      if (root instanceof ShadowRoot) shadows.push(root)
+    }
+    const host = surfaceElement(range.commonAncestorContainer)?.querySelectorAll("diffs-container") ?? []
+    for (const h of Array.from(host)) if (h.shadowRoot) shadows.push(h.shadowRoot)
+    const composed = (selection as any).getComposedRanges({ shadowRoots: shadows })[0] as StaticRange | undefined
+    if (composed && !composed.collapsed) {
+      try {
+        const inner = document.createRange()
+        inner.setStart(composed.startContainer, composed.startOffset)
+        inner.setEnd(composed.endContainer, composed.endOffset)
+        const innerText = inner.toString()
+        if (innerText.trim()) {
+          range = inner
+          text = innerText
+        }
+      } catch {
+        /* keep the plain range */
+      }
+    }
+  }
+
+  const element = surfaceElement(range.commonAncestorContainer)
   if (!element || !element.closest) return null
   if (element.closest(UI_SELECTOR)) return null
-  if (element.closest(EDITABLE_SELECTOR)) return null
+  if (element.closest(EDITABLE_SELECTOR) && !element.closest('[aria-label="Terminal input"]')) return null
 
   const inChat = (() => {
     if (element.closest(TIMELINE_SELECTOR)) return true
-    // A selection spanning several rows has its common ancestor above the rows:
-    // ask the timeline root whether the range touches it instead.
     const root = document.querySelector(TIMELINE_ROOT_SELECTOR)
-    return !!root && range.intersectsNode(root)
+    return !!root && (root.contains(element) || range.intersectsNode(root))
   })()
   let source: NoteSource
   if (inChat) {
@@ -127,11 +167,67 @@ export function readSelection(): SelectionTarget | null {
     source = { kind: "document", path }
   }
 
-  const text = normalizeQuote(selection.toString())
-  if (!text) return null
+  const quote = normalizeQuote(text)
+  if (!quote) return null
   const box = boxes(range)
   if (!box) return null
-  return { text, rect: box.rect, line: box.line, range: range.cloneRange(), source }
+  return { text: quote, rect: box.rect, line: box.line, range: range.cloneRange(), source }
+}
+
+/** A text-search anchor for a selection inside `root` (pierces shadow roots). */
+export function captureTextAnchor(range: Range, root: Element): DocAnchor | null {
+  const map = textMap(root)
+  if (!map) return null
+  const quote = range.toString()
+  if (!quote.trim()) return null
+  const selectionRect = range.getBoundingClientRect()
+  let chosen = -1
+  let index = map.text.indexOf(quote)
+  while (index >= 0) {
+    const candidate = rangeFromOffsets(map, index, index + quote.length)
+    if (chosen < 0) chosen = index
+    if (candidate) {
+      const rect = candidate.getBoundingClientRect()
+      if (Math.abs(rect.top - selectionRect.top) < 2 && Math.abs(rect.left - selectionRect.left) < 2) {
+        chosen = index
+        break
+      }
+    }
+    index = map.text.indexOf(quote, index + 1)
+  }
+  if (chosen < 0) return null
+  return {
+    path: "",
+    text: quote,
+    prefix: map.text.slice(Math.max(0, chosen - 40), chosen),
+    suffix: map.text.slice(chosen + quote.length, chosen + quote.length + 40),
+  }
+}
+
+/** Re-find a text anchor inside a root by search with context. */
+export function resolveTextAnchor(root: Element, anchor: DocAnchor): Range | null {
+  const map = textMap(root)
+  if (!map) return null
+  const candidates: number[] = []
+  let index = map.text.indexOf(anchor.text)
+  while (index >= 0 && candidates.length < 30) {
+    candidates.push(index)
+    index = map.text.indexOf(anchor.text, index + 1)
+  }
+  if (candidates.length === 0) return null
+  let chosen = candidates[0]
+  for (const candidate of candidates) {
+    const before = map.text.slice(Math.max(0, candidate - 40), candidate)
+    const after = map.text.slice(candidate + anchor.text.length, candidate + anchor.text.length + 40)
+    if (
+      (!anchor.prefix || before.endsWith(anchor.prefix)) &&
+      (!anchor.suffix || after.startsWith(anchor.suffix))
+    ) {
+      chosen = candidate
+      break
+    }
+  }
+  return rangeFromOffsets(map, chosen, chosen + anchor.text.length)
 }
 
 // ---------------------------------------------------------------- text maps
