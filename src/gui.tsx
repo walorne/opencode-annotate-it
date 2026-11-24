@@ -24,9 +24,10 @@ export default Plugin.define({
 
     ctx.add(Style, css)
 
-    // The floating UI follows the app's color scheme.
+    // The accent is user-configurable; everything else follows the app theme
+    // through its CSS tokens.
     createEffect(() => {
-      document.documentElement.classList.toggle("ait-dark", ctx.appearance.mode() === "dark")
+      document.documentElement.style.setProperty("--ait-accent", manager.accent())
     })
 
     // Review mode hides the app's own quote toolbar; re-sync on session switches

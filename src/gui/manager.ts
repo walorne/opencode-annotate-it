@@ -155,12 +155,20 @@ export function createManager(ctx: Ctx) {
 
   const pencilEnabled = () => ctx.stores.prefs.value.pencil ?? true
   const highlightsEnabled = () => ctx.stores.prefs.value.highlights ?? true
+  const accent = () => ctx.stores.prefs.value.accent ?? "#d97757"
 
   const setPref = (key: "pencil" | "highlights", value: boolean) => {
     ctx.stores.prefs.update((draft) => {
       draft[key] = value
     })
     if (key === "highlights") repaint()
+  }
+
+  const setAccent = (value: string) => {
+    ctx.stores.prefs.update((draft) => {
+      draft.accent = value
+    })
+    repaint()
   }
 
   // ------------------------------------------------------------ attaching notes
@@ -651,6 +659,8 @@ export function createManager(ctx: Ctx) {
     pencilEnabled,
     highlightsEnabled,
     setPref,
+    accent,
+    setAccent,
     quickReply,
     plainQuote,
     addCustom,

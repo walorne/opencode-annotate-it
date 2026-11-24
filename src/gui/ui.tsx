@@ -711,6 +711,32 @@ export function AnnotateSettings() {
             onChange={(value) => m.setPref("highlights", value)}
           />
         </ui.SettingsRow>
+        <ui.SettingsRow
+          id="accent"
+          title={ctx.t("settings.accent")}
+          description={ctx.t("settings.accent.description")}
+        >
+          <div class="ait-accent-picker">
+            <For each={["#d97757", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7", "#ec4899"]}>
+              {(color) => (
+                <button
+                  type="button"
+                  class={`ait-swatch${m.accent() === color ? " ait-swatch-active" : ""}`}
+                  style={{ background: color }}
+                  aria-label={color}
+                  onClick={() => m.setAccent(color)}
+                />
+              )}
+            </For>
+            <input
+              type="color"
+              class="ait-color-input"
+              value={m.accent()}
+              aria-label={ctx.t("settings.accent")}
+              onInput={(event) => m.setAccent(event.currentTarget.value)}
+            />
+          </div>
+        </ui.SettingsRow>
       </ui.SettingsSection>
       <ui.SettingsSection
         title={ctx.t("settings.actions")}
