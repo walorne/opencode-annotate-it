@@ -13,6 +13,10 @@
   background-color: color-mix(in srgb, var(--ait-accent, #d97757) 50%, transparent);
   color: inherit;
 }
+::highlight(annotate-it-selection) {
+  background-color: color-mix(in srgb, var(--ait-accent, #d97757) 30%, transparent);
+  color: inherit;
+}
 
 /* The app's own single-quote toolbar steps aside: the pencil button is the
    entry point in standby, the review panel replaces it in review mode. */

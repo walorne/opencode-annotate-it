@@ -30,6 +30,7 @@ export type EditorState = { id: string | null; label: string; text: string; x: n
 const PENDING_HIGHLIGHT = "annotate-it-pending"
 const SENT_HIGHLIGHT = "annotate-it-sent"
 const HOVER_HIGHLIGHT = "annotate-it-hover"
+const SELECTION_HIGHLIGHT = "annotate-it-selection"
 
 function highlightSupported() {
   return typeof Highlight === "function" && typeof CSS !== "undefined" && !!CSS.highlights
@@ -413,6 +414,7 @@ export function createManager(ctx: Ctx) {
         CSS.highlights.delete(PENDING_HIGHLIGHT)
         CSS.highlights.delete(SENT_HIGHLIGHT)
         CSS.highlights.delete(HOVER_HIGHLIGHT)
+        CSS.highlights.delete(SELECTION_HIGHLIGHT)
       } catch {
         /* ignore */
       }
@@ -436,6 +438,12 @@ export function createManager(ctx: Ctx) {
       CSS.highlights.set(PENDING_HIGHLIGHT, new Highlight(...pending))
       CSS.highlights.set(SENT_HIGHLIGHT, new Highlight(...sent))
       CSS.highlights.set(HOVER_HIGHLIGHT, new Highlight(...hovered))
+      // Focusing the panel's field collapses the native selection; keep the
+      // passage marked while the panel is open.
+      const active = target()
+      const selectionRange =
+        active?.range && active.range.startContainer.isConnected ? [active.range] : []
+      CSS.highlights.set(SELECTION_HIGHLIGHT, new Highlight(...selectionRange))
     } catch {
       /* a missing registry only removes the decoration */
     }
@@ -523,6 +531,7 @@ export function createManager(ctx: Ctx) {
   const clearExternalTarget = () => {
     if (isExternal(target())) setTarget(null)
   }
+  const isPressing = () => pressing
 
   // The terminal is a canvas: its selection reaches the app through the copy
   // event's clipboardData. Offer the copied passage for annotation at once.
@@ -704,6 +713,7 @@ export function createManager(ctx: Ctx) {
         CSS.highlights.delete(PENDING_HIGHLIGHT)
         CSS.highlights.delete(SENT_HIGHLIGHT)
         CSS.highlights.delete(HOVER_HIGHLIGHT)
+        CSS.highlights.delete(SELECTION_HIGHLIGHT)
       }
       document.documentElement.classList.remove("annotate-it-review")
     }
@@ -714,6 +724,7 @@ export function createManager(ctx: Ctx) {
     clearTarget: () => setTarget(null),
     setExternalTarget,
     clearExternalTarget,
+    isPressing,
     cancelTarget: () => {
       setTarget(null)
       setCustomDraft("")

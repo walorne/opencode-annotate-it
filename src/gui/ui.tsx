@@ -260,12 +260,12 @@ function ReviewPanel() {
   // once. The app's own focus management can steal the first attempt, so retry
   // until the field really holds focus.
   createEffect(() => {
-    if (m.target() && m.reviewing()) {
+    if (m.target() && m.reviewing() && !m.isPressing()) {
       let tries = 0
       let timer: ReturnType<typeof setTimeout> | undefined
       const attempt = () => {
         timer = undefined
-        if (!input || !m.target() || !m.reviewing()) return
+        if (!input || !m.target() || !m.reviewing() || m.isPressing()) return
         input.focus({ preventScroll: true })
         const end = input.value.length
         try {
@@ -808,10 +808,11 @@ export function AnnotateSettings() {
 
 export function AnnotateOverlay() {
   const m = manager()
-  // Repaint highlights whenever notes or hover change.
+  // Repaint highlights whenever notes, hover or the active selection change.
   createEffect(() => {
     m.paintTick()
     m.hover()
+    m.target()
     m.schedulePaint()
   })
   return (
