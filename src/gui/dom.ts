@@ -79,8 +79,8 @@ export function documentPathOf(element: Element): string | null {
   const strip = paneId
     ? pane.querySelector(`[data-pane-strip="${CSS.escape(paneId)}"]`)
     : pane.querySelector("[data-pane-strip]")
-  const trigger = strip?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"][data-pane-tab]')
-  const key = trigger?.getAttribute("data-pane-tab") ?? ""
+  const trigger = strip?.querySelector('[role="tab"][aria-selected="true"]')
+  const key = trigger?.closest("[data-pane-tab]")?.getAttribute("data-pane-tab") ?? ""
   // Host file tab keys are `file://` + the encoded absolute path.
   if (!key.startsWith("file://")) return null
   const rest = key.slice("file://".length)
@@ -449,8 +449,8 @@ export function captureDocAnchor(range: Range, path: string): DocAnchor | null {
 export function resolveDocAnchor(anchor: DocAnchor): Range | null {
   const panes = document.querySelectorAll("[data-pane-content]")
   for (const pane of Array.from(panes)) {
-    const trigger = pane.querySelector<HTMLElement>('[role="tab"][aria-selected="true"][data-pane-tab]')
-    const key = trigger?.getAttribute("data-pane-tab") ?? ""
+    const trigger = pane.querySelector('[role="tab"][aria-selected="true"]')
+    const key = trigger?.closest("[data-pane-tab]")?.getAttribute("data-pane-tab") ?? ""
     if (!key.startsWith("file://")) continue
     const path = documentPathOf(pane as Element)
     if (path !== anchor.path) continue
