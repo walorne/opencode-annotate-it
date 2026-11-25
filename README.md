@@ -38,19 +38,21 @@
 
 ## Установка
 
-Одной строкой, как в DSH (после публикации репозитория):
+Из npm (рекомендуется):
 
 ```sh
-opencode plugin add github:walorne/opencode-annotate-it
+opencode plugin add opencode-annotate-it
 ```
 
-Или локально — в `~/.config/opencode/opencode.jsonc`:
+Или в `~/.config/opencode/opencode.jsonc`:
 
 ```jsonc
 {
-  "plugins": ["/Users/pastakhov/Documents/DEV/opencode-annotate-it"]
+  "plugins": ["opencode-annotate-it@^0.1.0"]
 }
 ```
+
+Исходники: https://github.com/walorne/opencode-annotate-it
 
 ## Настройки
 
@@ -68,3 +70,12 @@ npx tsc --noEmit
 
 GUI-часть (`./gui-experimental`) собирается Vite-пресетом `@opencode/plugin/gui/vite` в один
 CommonJS-файл. Целевая версия SDK — 2.3.x (OpenCode Desktop 2.3.0).
+
+## Публикация новой версии
+
+1. `npm version patch` (или minor/major).
+2. `zsh scripts/publish.sh` — скрипт публикует с токеном из `~/.npm-publish-token`,
+   сам открывает браузер для подтверждения passkey и ждёт его.
+3. `git push origin main --tags`.
+
+Пользователи с `opencode-annotate-it@^0.1.0` получат обновление автоматически.
