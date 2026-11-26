@@ -1,13 +1,15 @@
 {
   "name": "opencode-annotate-it",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Annotate chats and documents in OpenCode Desktop: select a passage, add a note or quick reply, highlight the text, and send the whole review as one message. Port of dsh-annotate-it.",
   "license": "MIT",
   "type": "module",
   "exports": {
     "./gui-experimental": "./dist/gui-experimental.cjs"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "vite build",
     "watch": "vite build --watch",

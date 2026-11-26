@@ -121,6 +121,9 @@ export default Plugin.define({
     // their selection and pushes it here.
     const browserSelection = ctx.main(BrowserSelection)
     browserSelection.on("selection", (data) => {
+      // While the button is held inside the page the selection is still being
+      // drawn; showing the panel (and focusing its field) would break the drag.
+      if (data.pressing) return
       const text = normalizeQuote(data.text)
       if (!text) return
       manager.setExternalTarget({
@@ -169,6 +172,17 @@ export default Plugin.define({
     const last = new Map<number, string>()
 
     const sample = `(() => {
+      if (!window.__annotateItWatch) {
+        window.__annotateItWatch = true;
+        window.__annotateItPressing = false;
+        const down = (e) => { if (e.button === 0) window.__annotateItPressing = true; };
+        const up = () => { window.__annotateItPressing = false; };
+        window.addEventListener('pointerdown', down, true);
+        window.addEventListener('pointerup', up, true);
+        window.addEventListener('pointercancel', up, true);
+        window.addEventListener('blur', up);
+        document.addEventListener('dragend', up, true);
+      }
       const s = window.getSelection();
       if (!s || s.isCollapsed || s.rangeCount === 0) return null;
       const text = s.toString().trim();
@@ -178,6 +192,7 @@ export default Plugin.define({
         text: text.slice(0, 20000),
         url: location.href,
         title: document.title || "",
+        pressing: !!window.__annotateItPressing,
         rect: { top: r.top, left: r.left, right: r.right, bottom: r.bottom }
       };
     })()`
@@ -186,6 +201,7 @@ export default Plugin.define({
       text: string
       url: string
       title: string
+      pressing: boolean
       rect: { top: number; left: number; right: number; bottom: number }
     }
 
@@ -213,7 +229,7 @@ export default Plugin.define({
           } catch {
             continue
           }
-          const key = result ? `${result.text}\u0000${result.url}` : ""
+          const key = result ? `${result.text}\u0000${result.url}\u0000${result.pressing}` : ""
           if (last.get(wc.id) === key) continue
           last.set(wc.id, key)
           if (!result) {
@@ -226,6 +242,7 @@ export default Plugin.define({
             text: result.text,
             url: result.url,
             title: result.title,
+            pressing: result.pressing,
             rect: {
               top: bounds.y + result.rect.top * zoom,
               left: bounds.x + result.rect.left * zoom,

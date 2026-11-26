@@ -10,6 +10,7 @@ export const BrowserSelection = Ipc.define({
       text: Schema.String,
       url: Schema.String,
       title: Schema.String,
+      pressing: Schema.Boolean,
       rect: Schema.Struct({
         top: Schema.Number,
         left: Schema.Number,
